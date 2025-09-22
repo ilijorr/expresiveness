@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - ExpresiVeNess{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Graph Management Dashboard</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <button class="btn btn-primary me-2" onclick="createNewGraph()">Create New Graph</button>
+                        <button class="btn btn-outline-primary" onclick="viewExistingGraph()">View Existing Graph</button>
+                    </div>
+                    <div id="model-selector" style="display: none;" class="mt-3">
+                        <label class="form-label">Select Graph:</label>
+                        <select id="model-list" class="form-select">
+                            <option value="">Loading...</option>
+                        </select>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-success" onclick="viewSelectedModel()">View</button>
+                            <button class="btn btn-sm btn-secondary" onclick="hideModelSelector()">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>System Status</h5>
+                </div>
+                <div class="card-body" id="system-status">
+                    <p><strong>Status:</strong> <span class="badge bg-secondary">Loading...</span></p>
+                    <p><strong>Total Models:</strong> <span id="model-count">Loading...</span></p>
+                    <p><strong>Available Syntaxes:</strong> <span id="syntax-count">Loading...</span></p>
+                    <p><strong>Current Model:</strong> <span id="current-model">Loading...</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let availableModels = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadSystemStatus();
+    loadModels();
+});
+
+async function loadSystemStatus() {
+    try {
+        const response = await fetch('/api/system/status');
+        const data = await response.json();
+
+        if (data.success) {
+            const status = data.status;
+
+            // Update status indicators
+            document.querySelector('#system-status .badge').textContent = 'Running';
+            document.querySelector('#system-status .badge').className = 'badge bg-success';
+
+            document.getElementById('model-count').textContent = status.total_models;
+            document.getElementById('syntax-count').textContent = status.available_syntaxes.length;
+            document.getElementById('current-model').textContent = status.current_model || 'None';
+        }
+    } catch (error) {
+        console.error('Error loading system status:', error);
+        document.querySelector('#system-status .badge').textContent = 'Error';
+        document.querySelector('#system-status .badge').className = 'badge bg-danger';
+    }
+}
+
+async function loadModels() {
+    try {
+        const response = await fetch('/api/models');
+        const data = await response.json();
+
+        if (data.success) {
+            availableModels = data.models;
+            const modelSelect = document.getElementById('model-list');
+            modelSelect.innerHTML = '<option value="">Select a graph...</option>';
+
+            data.models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = `${model.name} (${model.nodes} nodes, ${model.edges} edges)`;
+                modelSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading models:', error);
+    }
+}
+
+function createNewGraph() {
+    // Go to new graph creation page
+    window.location.href = '/graph/new';
+}
+
+function viewExistingGraph() {
+    // Go to existing graph view page
+    window.location.href = '/graph';
+}
+
+function showModelSelector() {
+    document.getElementById('model-selector').style.display = 'block';
+    loadModels(); // Refresh the model list
+}
+
+function hideModelSelector() {
+    document.getElementById('model-selector').style.display = 'none';
+}
+
+function viewSelectedModel() {
+    const selectedModelId = document.getElementById('model-list').value;
+
+    if (!selectedModelId) {
+        alert('Please select a graph first');
+        return;
+    }
+
+    // Navigate to graph page with the selected syntax
+    window.location.href = `/graph?syntax=${selectedModelId}`;
+}
+</script>
+{% endblock %}
