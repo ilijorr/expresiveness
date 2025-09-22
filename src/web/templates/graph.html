@@ -1,0 +1,819 @@
+{% extends "base.html" %}
+
+{% block title %}{% if mode == 'new' %}Create New Graph{% else %}Graph View{% endif %} - ExpresiVeNess{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header">
+                    <h5>{% if mode == 'new' %}Create New Graph{% else %}Graph Controls{% endif %}</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Syntax Type</label>
+                        <select id="syntax-select" class="form-select" onchange="handleSyntaxChange()">
+                            <option value="basic">Basic Graph</option>
+                            <option value="process">Process Flow</option>
+                            <option value="hierarchy">Hierarchy</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <div id="loading-indicator" class="text-center" style="display: none;">
+                            <div class="spinner-border spinner-border-sm" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            Loading graph...
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Graph Information</label>
+                        <div class="card">
+                            <div class="card-body">
+                                <p><strong>Name:</strong> <span id="graph-name">Loading...</span></p>
+                                <p><strong>Nodes:</strong> <span id="graph-nodes">0</span></p>
+                                <p><strong>Edges:</strong> <span id="graph-edges">0</span></p>
+                                <p><strong>Type:</strong> <span id="graph-type">Loading...</span></p>
+                            </div>
+                        </div>
+                    </div>
+
+
+
+                    <div class="mb-3">
+                        <label class="form-label">Filters</label>
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <label class="form-label">Node Type Filter</label>
+                                    <div id="node-type-filters">
+                                        <!-- Dynamically populated -->
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Actions</label>
+                                    <button class="btn btn-sm btn-outline-secondary w-100" onclick="clearAllFilters()">Clear All Filters</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Node Details</label>
+                        <div class="card">
+                            <div class="card-body">
+                                <div id="node-details">
+                                    <p class="text-muted">Click on a node to view details</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Tree Outline</label>
+                        <div class="card">
+                            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                                <div id="tree-outline">
+                                    <p class="text-muted">No graph loaded</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h5>Graph Visualization</h5>
+                        </div>
+                        <div class="col-md-4">
+                            <!-- Search controls -->
+                            <div class="search-inline">
+                                <input type="text" id="search-input" class="form-control form-control-sm"
+                                       placeholder="Search nodes..."
+                                       onkeyup="performSearch(this.value)">
+                                <div id="search-results" class="search-results-dropdown">
+                                    <!-- Search results appear here -->
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <!-- Navigation controls -->
+                            <div class="navigation-inline">
+                                <div class="btn-group" role="group">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="panUp()" title="Pan Up">↑</button>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="panLeft()" title="Pan Left">←</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="resetView()" title="Reset View">⌂</button>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="panRight()" title="Pan Right">→</button>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="panDown()" title="Pan Down">↓</button>
+                                </div>
+                                <div class="btn-group ml-2" role="group">
+                                    <button class="btn btn-sm btn-success" onclick="zoomIn()" title="Zoom In">+</button>
+                                    <button class="btn btn-sm btn-warning" onclick="zoomOut()" title="Zoom Out">-</button>
+                                    <button class="btn btn-sm btn-info" onclick="centerOnGraph()" title="Center on Graph">⊙</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body p-0" style="position: relative;">
+                    <div id="graph-container">
+                        <svg id="graph-svg" width="100%" height="600"></svg>
+                    </div>
+                    <!-- Bird-view minimap -->
+                    <div id="minimap-container" style="position: absolute; top: 10px; right: 10px;
+                                                      width: 200px; height: 150px;
+                                                      border: 2px solid #007bff;
+                                                      background: rgba(255,255,255,0.9);
+                                                      border-radius: 4px;">
+                        <svg id="minimap-svg" width="100%" height="100%"></svg>
+                        <div id="viewport-rect" style="position: absolute;
+                                                      border: 2px solid #ff6b35;
+                                                      background: rgba(255,107,53,0.2);
+                                                      pointer-events: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/d3-visualization.js') }}"></script>
+<script>
+let currentGraph = null;
+let originalGraph = null; // Store original unfiltered graph data
+let visualization = null;
+const pageMode = '{{ mode or "view" }}'; // Get mode from Flask template
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize D3 visualization
+    visualization = new GraphVisualization('#graph-svg');
+
+    // Check for URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const syntaxParam = urlParams.get('syntax');
+
+    if (syntaxParam) {
+        const syntaxSelect = document.getElementById('syntax-select');
+        if (syntaxSelect.querySelector(`option[value="${syntaxParam}"]`)) {
+            syntaxSelect.value = syntaxParam;
+        }
+    }
+
+    // Handle different modes
+    if (pageMode === 'new') {
+        // New graph mode - start with empty state
+        console.log('New graph mode - starting with empty canvas');
+        document.getElementById('input-data').value = '';
+
+        // Set default syntax but don't load any graph
+        document.getElementById('syntax-select').value = 'basic';
+
+        // Clear any existing visualization
+        if (visualization) {
+            visualization.clearGraph();
+        }
+
+    } else {
+        // View mode - load existing graph
+        console.log('View mode - loading existing graph');
+        loadGraphBySyntax();
+    }
+
+});
+
+function handleSyntaxChange() {
+    // Only load graph in view mode, not in new mode
+    if (pageMode !== 'new') {
+        loadGraphBySyntax();
+    }
+}
+
+async function loadGraphBySyntax() {
+    const syntax = document.getElementById('syntax-select').value;
+    const loadingIndicator = document.getElementById('loading-indicator');
+
+    try {
+        // Show loading indicator
+        loadingIndicator.style.display = 'block';
+
+        // Fetch graph data from backend
+        const response = await fetch(`/api/graph/${syntax}`);
+        const data = await response.json();
+
+        if (data.success && data.graph) {
+            // Store original graph data before any modifications
+            originalGraph = JSON.parse(JSON.stringify(data.graph));
+
+            // Convert backend graph format to D3 format
+            const graphData = convertToD3Format(data.graph);
+
+            // Update visualization
+            currentGraph = graphData;
+            visualization.updateGraph(graphData);
+
+            // Update graph information
+            updateGraphInfo(data.graph);
+
+        } else {
+            console.error('Failed to load graph:', data.error);
+            alert('Failed to load graph: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error loading graph:', error);
+        alert('Error loading graph: ' + error.message);
+    } finally {
+        // Hide loading indicator
+        loadingIndicator.style.display = 'none';
+    }
+}
+
+function convertToD3Format(graph) {
+    // Convert nodes
+    const nodes = graph.nodes.map(node => ({
+        id: node.id,
+        label: node.label,
+        group: getNodeGroup(node.node_type),
+        x: node.position ? node.position.x : null,
+        y: node.position ? node.position.y : null,
+        nodeType: node.node_type
+    }));
+
+    // Convert edges
+    const edges = graph.edges.map(edge => ({
+        source: edge.source_id,
+        target: edge.target_id,
+        label: edge.label || '',
+        edgeType: edge.edge_type
+    }));
+
+    return { nodes, edges };
+}
+
+function getNodeGroup(nodeType) {
+    // Assign different colors/groups based on node type
+    const typeMap = {
+        'basic': 1,
+        'start': 2,
+        'end': 3,
+        'task': 4,
+        'decision': 5,
+        'executive': 6,
+        'director': 7,
+        'manager': 8,
+        'employee': 9
+    };
+    return typeMap[nodeType] || 1;
+}
+
+function updateGraphInfo(graph) {
+    // Update graph information display
+    document.getElementById('graph-name').textContent = graph.name;
+    document.getElementById('graph-nodes').textContent = graph.nodes.length;
+    document.getElementById('graph-edges').textContent = graph.edges.length;
+    document.getElementById('graph-type').textContent = graph.directed ? 'Directed' : 'Undirected';
+
+    // Update filters
+    updateFilterOptions(graph);
+
+    // Update tree outline
+    updateTreeOutline(graph);
+}
+
+function updateTreeOutline(graph) {
+    const treeOutlineDiv = document.getElementById('tree-outline');
+
+    if (!graph.nodes || graph.nodes.length === 0) {
+        treeOutlineDiv.innerHTML = '<p class="text-muted">No nodes to display</p>';
+        return;
+    }
+
+    // Build adjacency list for the graph
+    const adjacencyList = {};
+    graph.nodes.forEach(node => {
+        adjacencyList[node.id] = [];
+    });
+
+    graph.edges.forEach(edge => {
+        if (adjacencyList[edge.source_id]) {
+            adjacencyList[edge.source_id].push(edge.target_id);
+        }
+    });
+
+    // Find root nodes (nodes with no incoming edges)
+    const hasIncomingEdge = new Set();
+    graph.edges.forEach(edge => {
+        hasIncomingEdge.add(edge.target_id);
+    });
+
+    const rootNodes = graph.nodes.filter(node => !hasIncomingEdge.has(node.id));
+
+    // If no clear roots, treat all nodes as potential roots
+    const startNodes = rootNodes.length > 0 ? rootNodes : graph.nodes;
+
+    let html = '<div class="tree-outline">';
+
+    const visited = new Set();
+
+    startNodes.forEach(node => {
+        if (!visited.has(node.id)) {
+            html += buildTreeHTML(node, graph.nodes, adjacencyList, visited, 0);
+        }
+    });
+
+    // Add any remaining unvisited nodes
+    graph.nodes.forEach(node => {
+        if (!visited.has(node.id)) {
+            html += buildTreeHTML(node, graph.nodes, adjacencyList, visited, 0);
+        }
+    });
+
+    html += '</div>';
+    treeOutlineDiv.innerHTML = html;
+}
+
+function buildTreeHTML(node, allNodes, adjacencyList, visited, level) {
+    if (visited.has(node.id)) {
+        return '';
+    }
+
+    visited.add(node.id);
+
+    const indent = '&nbsp;'.repeat(level * 4);
+    const nodeObj = allNodes.find(n => n.id === node.id);
+    const nodeLabel = nodeObj ? nodeObj.label : node.id;
+    const nodeType = nodeObj ? nodeObj.node_type : 'unknown';
+
+    let html = `
+        <div class="tree-node" style="margin-left: ${level * 20}px; cursor: pointer;"
+             onclick="highlightNodeInGraph('${node.id}')"
+             onmouseover="this.style.backgroundColor='#f0f0f0'"
+             onmouseout="this.style.backgroundColor='transparent'">
+            <span class="tree-node-icon">${getNodeIcon(nodeType)}</span>
+            <span class="tree-node-label">${nodeLabel}</span>
+        </div>
+    `;
+
+    // Add children
+    const children = adjacencyList[node.id] || [];
+    children.forEach(childId => {
+        const childNode = allNodes.find(n => n.id === childId);
+        if (childNode && !visited.has(childId)) {
+            html += buildTreeHTML(childNode, allNodes, adjacencyList, visited, level + 1);
+        }
+    });
+
+    return html;
+}
+
+function getNodeIcon(nodeType) {
+    const iconMap = {
+        'start': '▶',
+        'end': '■',
+        'task': '□',
+        'decision': '◊',
+        'executive': '○',
+        'director': '●',
+        'manager': '◐',
+        'employee': '○',
+        'basic': '●'
+    };
+    return iconMap[nodeType] || '●';
+}
+
+function highlightNodeInGraph(nodeId) {
+    if (!visualization) return;
+
+    // Remove previous highlights
+    visualization.nodeContainer.selectAll('.node')
+        .classed('highlighted', false)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2);
+
+    // Highlight the selected node
+    visualization.nodeContainer.selectAll('.node-group')
+        .filter(d => d.id === nodeId)
+        .select('.node')
+        .classed('highlighted', true)
+        .attr('stroke', '#ff6b35')
+        .attr('stroke-width', 4);
+
+    // Optional: Center on the highlighted node
+    const node = currentGraph.nodes.find(n => n.id === nodeId);
+    if (node && node.x !== undefined && node.y !== undefined) {
+        const transform = d3.zoomIdentity
+            .translate(visualization.width / 2 - node.x, visualization.height / 2 - node.y)
+            .scale(1.5);
+        visualization.svg.transition().duration(500).call(visualization.zoom.transform, transform);
+    }
+}
+
+
+// Navigation control functions
+function panLeft() {
+    if (visualization) {
+        visualization.panLeft();
+    }
+}
+
+function panRight() {
+    if (visualization) {
+        visualization.panRight();
+    }
+}
+
+function panUp() {
+    if (visualization) {
+        visualization.panUp();
+    }
+}
+
+function panDown() {
+    if (visualization) {
+        visualization.panDown();
+    }
+}
+
+function zoomIn() {
+    if (visualization) {
+        visualization.zoomIn();
+    }
+}
+
+function zoomOut() {
+    if (visualization) {
+        visualization.zoomOut();
+    }
+}
+
+function resetView() {
+    if (visualization) {
+        visualization.resetView();
+    }
+}
+
+function centerOnGraph() {
+    if (visualization) {
+        visualization.centerOnGraph();
+    }
+}
+
+// Filter functionality
+let activeFilters = {
+    nodeTypes: new Set()
+};
+
+function updateFilterOptions(graph) {
+    const nodeTypeFiltersDiv = document.getElementById('node-type-filters');
+
+    if (!graph.nodes || graph.nodes.length === 0) {
+        nodeTypeFiltersDiv.innerHTML = '<p class="text-muted">No nodes to filter</p>';
+        return;
+    }
+
+    // Get unique node types
+    const nodeTypes = [...new Set(graph.nodes.map(node => node.node_type))];
+
+    let html = '';
+    nodeTypes.forEach(nodeType => {
+        const isChecked = !activeFilters.nodeTypes.has(nodeType);
+        html += `
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox"
+                       id="filter-${nodeType}" ${isChecked ? 'checked' : ''}
+                       onchange="toggleNodeTypeFilter('${nodeType}')">
+                <label class="form-check-label" for="filter-${nodeType}">
+                    ${getNodeIcon(nodeType)} ${nodeType}
+                </label>
+            </div>
+        `;
+    });
+
+    nodeTypeFiltersDiv.innerHTML = html;
+}
+
+function toggleNodeTypeFilter(nodeType) {
+    if (activeFilters.nodeTypes.has(nodeType)) {
+        activeFilters.nodeTypes.delete(nodeType);
+    } else {
+        activeFilters.nodeTypes.add(nodeType);
+    }
+
+    applyFilters();
+}
+
+function applyFilters() {
+    if (!visualization || !originalGraph) return;
+
+    // Filter nodes based on active filters (use original graph data)
+    const filteredNodes = originalGraph.nodes.filter(node => {
+        // Show node if its type is not in the filter (not hidden)
+        return !activeFilters.nodeTypes.has(node.node_type);
+    });
+
+    // Filter edges to only show those connecting visible nodes (use original graph data)
+    const visibleNodeIds = new Set(filteredNodes.map(n => n.id));
+    const filteredEdges = originalGraph.edges.filter(edge => {
+        // Use original API format (source_id/target_id)
+        const sourceId = edge.source_id;
+        const targetId = edge.target_id;
+
+        return visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId);
+    });
+
+    // Convert filtered data to D3 format
+    const filteredGraphData = convertToD3Format({
+        nodes: filteredNodes,
+        edges: filteredEdges,
+        name: originalGraph.name,
+        directed: originalGraph.directed
+    });
+
+    // Update current graph reference
+    currentGraph = filteredGraphData;
+
+    // Update visualization with filtered data
+    visualization.updateGraph(filteredGraphData);
+
+    // Update tree outline with filtered data
+    updateTreeOutline({
+        name: originalGraph.name,
+        nodes: filteredNodes,
+        edges: filteredEdges,
+        directed: originalGraph.directed
+    });
+}
+
+function clearAllFilters() {
+    activeFilters.nodeTypes.clear();
+
+    // Update all checkboxes
+    document.querySelectorAll('#node-type-filters input[type="checkbox"]').forEach(checkbox => {
+        checkbox.checked = true;
+    });
+
+    // Reapply with no filters
+    applyFilters();
+}
+
+// Search functionality
+let searchResults = [];
+
+function performSearch(query) {
+    const searchResultsDiv = document.getElementById('search-results');
+
+    if (!query || !originalGraph || !originalGraph.nodes) {
+        searchResultsDiv.innerHTML = '';
+        searchResultsDiv.classList.remove('show');
+        clearSearchHighlights();
+        return;
+    }
+
+    query = query.toLowerCase().trim();
+
+    // Search in nodes (use original graph data)
+    searchResults = originalGraph.nodes.filter(node => {
+        return (node.label && node.label.toLowerCase().includes(query)) ||
+               (node.id && node.id.toLowerCase().includes(query));
+    });
+
+    // Display search results
+    if (searchResults.length === 0) {
+        searchResultsDiv.innerHTML = '<div style="padding: 8px; text-align: center; color: #6c757d;">No matches found</div>';
+        searchResultsDiv.classList.add('show');
+        clearSearchHighlights();
+    } else {
+        let html = '';
+        searchResults.forEach((node, index) => {
+            html += `
+                <div class="search-result-item" onclick="selectSearchResult('${node.id}')"
+                     style="padding: 6px 8px; cursor: pointer; border-bottom: 1px solid #f0f0f0;">
+                    <span class="search-result-icon">${getNodeIcon(node.node_type)}</span>
+                    <span class="search-result-label">${node.label || node.id}</span>
+                </div>
+            `;
+        });
+        searchResultsDiv.innerHTML = html;
+        searchResultsDiv.classList.add('show');
+
+        // Highlight search results in graph
+        highlightSearchResults();
+    }
+}
+
+function selectSearchResult(nodeId) {
+    // Clear previous highlights
+    clearSearchHighlights();
+
+    // Highlight the selected node
+    highlightNodeInGraph(nodeId);
+
+    // Highlight in search results
+    document.querySelectorAll('.search-result-item').forEach(item => {
+        item.style.backgroundColor = 'transparent';
+    });
+
+    const selectedItem = document.querySelector(`[onclick="selectSearchResult('${nodeId}')"]`);
+    if (selectedItem) {
+        selectedItem.style.backgroundColor = '#e3f2fd';
+    }
+}
+
+function highlightSearchResults() {
+    if (!visualization || searchResults.length === 0) return;
+
+    // Clear previous highlights
+    clearSearchHighlights();
+
+    // Highlight all search result nodes
+    visualization.nodeContainer.selectAll('.node-group')
+        .filter(d => searchResults.some(result => result.id === d.id))
+        .select('.node')
+        .classed('search-highlighted', true)
+        .attr('stroke', '#2196f3')
+        .attr('stroke-width', 3);
+}
+
+function clearSearchHighlights() {
+    if (!visualization) return;
+
+    visualization.nodeContainer.selectAll('.node')
+        .classed('search-highlighted', false)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2);
+
+    // Also clear any node selection highlights
+    visualization.nodeContainer.selectAll('.node')
+        .classed('highlighted', false);
+}
+
+function clearSearch() {
+    document.getElementById('search-input').value = '';
+    const searchResultsDiv = document.getElementById('search-results');
+    searchResultsDiv.innerHTML = '';
+    searchResultsDiv.classList.remove('show');
+    searchResults = [];
+    clearSearchHighlights();
+
+    // Clear search result highlights
+    document.querySelectorAll('.search-result-item').forEach(item => {
+        item.style.backgroundColor = 'transparent';
+    });
+}
+
+// Node details functionality
+window.onNodeSelected = function(node) {
+    displayNodeDetails(node);
+};
+
+function displayNodeDetails(node) {
+    const nodeDetailsDiv = document.getElementById('node-details');
+
+    if (!node) {
+        nodeDetailsDiv.innerHTML = '<p class="text-muted">Click on a node to view details</p>';
+        return;
+    }
+
+    // Find connected nodes
+    const connectedNodes = findConnectedNodes(node.id);
+
+    let html = `
+        <div class="node-details-content">
+            <div class="node-details-header">
+                <h6><span class="node-icon">${getNodeIcon(node.nodeType || node.node_type)}</span> ${node.label || node.id}</h6>
+            </div>
+            <div class="node-details-body">
+                <p><strong>ID:</strong> ${node.id}</p>
+                <p><strong>Type:</strong> ${node.nodeType || node.node_type || 'unknown'}</p>
+                ${node.label ? `<p><strong>Label:</strong> ${node.label}</p>` : ''}
+                ${node.position ? `<p><strong>Position:</strong> (${Math.round(node.x || 0)}, ${Math.round(node.y || 0)})</p>` : ''}
+                <p><strong>Group:</strong> ${node.group || 1}</p>
+            </div>
+    `;
+
+    if (connectedNodes.incoming.length > 0 || connectedNodes.outgoing.length > 0) {
+        html += '<div class="node-details-connections">';
+        html += '<p><strong>Connections:</strong></p>';
+
+        if (connectedNodes.incoming.length > 0) {
+            html += '<p><strong>Incoming:</strong></p>';
+            html += '<ul class="connection-list">';
+            connectedNodes.incoming.forEach(conn => {
+                html += `<li onclick="highlightNodeInGraph('${conn.nodeId}')" style="cursor: pointer;">
+                    ${getNodeIcon(conn.nodeType)} ${conn.label}
+                </li>`;
+            });
+            html += '</ul>';
+        }
+
+        if (connectedNodes.outgoing.length > 0) {
+            html += '<p><strong>Outgoing:</strong></p>';
+            html += '<ul class="connection-list">';
+            connectedNodes.outgoing.forEach(conn => {
+                html += `<li onclick="highlightNodeInGraph('${conn.nodeId}')" style="cursor: pointer;">
+                    ${getNodeIcon(conn.nodeType)} ${conn.label}
+                </li>`;
+            });
+            html += '</ul>';
+        }
+
+        html += '</div>';
+    }
+
+    html += '</div>';
+    nodeDetailsDiv.innerHTML = html;
+}
+
+function findConnectedNodes(nodeId) {
+    const result = {
+        incoming: [],
+        outgoing: []
+    };
+
+    if (!originalGraph || !originalGraph.edges) {
+        return result;
+    }
+
+    originalGraph.edges.forEach(edge => {
+        if (edge.target_id === nodeId) {
+            // Incoming edge
+            const sourceNode = originalGraph.nodes.find(n => n.id === edge.source_id);
+            if (sourceNode) {
+                result.incoming.push({
+                    nodeId: sourceNode.id,
+                    label: sourceNode.label || sourceNode.id,
+                    nodeType: sourceNode.node_type
+                });
+            }
+        }
+
+        if (edge.source_id === nodeId) {
+            // Outgoing edge
+            const targetNode = originalGraph.nodes.find(n => n.id === edge.target_id);
+            if (targetNode) {
+                result.outgoing.push({
+                    nodeId: targetNode.id,
+                    label: targetNode.label || targetNode.id,
+                    nodeType: targetNode.node_type
+                });
+            }
+        }
+    });
+
+    return result;
+}
+
+// Hide search dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const searchInput = document.getElementById('search-input');
+    const searchResults = document.getElementById('search-results');
+
+    if (searchInput && searchResults &&
+        !searchInput.contains(event.target) &&
+        !searchResults.contains(event.target)) {
+        searchResults.classList.remove('show');
+    }
+});
+
+// Initialize page
+console.log('ExpresiVeNess Graph Visualization loaded');
+
+
+// Utility function to show temporary messages
+function showMessage(message, type = 'info') {
+    // Create message element
+    const messageEl = document.createElement('div');
+    messageEl.className = `alert alert-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'info'}`;
+    messageEl.style.position = 'fixed';
+    messageEl.style.top = '20px';
+    messageEl.style.right = '20px';
+    messageEl.style.zIndex = '9999';
+    messageEl.style.minWidth = '300px';
+    messageEl.style.maxWidth = '400px';
+
+    messageEl.innerHTML = `
+        ${message}
+        <button type="button" class="close-btn" onclick="this.parentElement.remove()">&times;</button>
+    `;
+
+    // Add to page
+    document.body.appendChild(messageEl);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        if (messageEl.parentNode) {
+            messageEl.parentNode.removeChild(messageEl);
+        }
+    }, 3000);
+}
+</script>
+{% endblock %}
