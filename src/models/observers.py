@@ -91,20 +91,6 @@ class ControllerSubject(ABC):
         for observer in self._view_observers:
             observer.on_view_action(action, parameters)
 
-
-# Concrete observer for logging (useful for debugging)
-class LoggingObserver(ModelObserver):
-    """Observer that logs all model changes"""
-    
-    def __init__(self, logger_name: str = "src"):
-        import logging
-        self.logger = logging.getLogger(logger_name)
-    
-    def on_model_changed(self, event_type: ModelEvent, data: Dict[str, Any]) -> None:
-        """Logs model changes"""
-        self.logger.info(f"Model event: {event_type.value}, data: {data}")
-
-
 # Utility functions for creating observer connections
 def connect_model_to_controller(model: ModelSubject, controller: ModelObserver) -> None:
     """Connects model with controller"""
